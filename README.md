@@ -33,7 +33,6 @@ Fichier `.env` à la racine de `ws-server` :
 ```bash
 cd ws-server
 npm install
-# Prisma client généré dans krypton-website (depuis le dossier krypton-website) :
 #   npx prisma generate
 node index.js
 # ou

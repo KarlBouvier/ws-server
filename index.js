@@ -12,7 +12,7 @@ import "dotenv/config";
 import { pdfRouter } from "./routes/pdf.js";
 import { initWebSocket } from "./websocket/wsHandler.js";
 
-const PORT = Number(process.env.WS_PORT) || 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));

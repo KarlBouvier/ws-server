@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "5",
@@ -17,8 +18,5 @@
   },
   "devDependencies": {
     "prisma": "5"
-  },
-  "prisma": {
-    "schema": "../krypton-website/prisma/schema.prisma"
   }
 }

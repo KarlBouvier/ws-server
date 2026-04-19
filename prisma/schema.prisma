@@ -1,0 +1,409 @@
+// Krypton Studio - Database schema
+// Gestion clients, projets, sites (URLs), leads, facturation, messagerie
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  CLIENT
+}
+
+enum ProjectType {
+  RESTAURANT_SITE
+  PIZZERIA_SITE
+  HAIRDRESSER_SITE
+  SHOP_SITE
+  OTHER
+}
+
+enum ProjectStatus {
+  REQUESTED
+  APPROVED
+  IN_PROGRESS
+  COMPLETED
+  MAINTENANCE
+  REJECTED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  CONVERTED
+  LOST
+}
+
+enum MessageSender {
+  CLIENT
+  ADMIN
+}
+
+enum Plan {
+  BASIC
+  PRO
+  PREMIUM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAST_DUE
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum TicketCategory {
+  BUG
+  FEATURE
+  SUPPORT
+  OTHER
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CLIENT
+  RESOLVED
+  CLOSED
+}
+
+enum SenderType {
+  CLIENT
+  ADMIN
+}
+
+enum AuditLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  password           String
+  firstName          String?
+  lastName           String?
+  role               Role      @default(CLIENT)
+  emailVerified      DateTime?
+  mustChangePassword Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  client             Client?
+  verificationTokens VerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model VerificationToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Client {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  companyName         String
+  phone               String?
+  address             String    @default("")
+  internalNotes       String?   @default("")
+  tags                String[]  @default([])
+  stripeCustomerId    String?
+  // Soft-delete : le compte est conservé 30 jours avant suppression définitive
+  deletedAt           DateTime?
+  scheduledDeletionAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects      Project[]
+  invoices      Invoice[]
+  quotes        Quote[]
+  messages      Message[]
+  subscriptions Subscription[]
+  conversation  Conversation?
+
+  @@index([deletedAt])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  clientId    String
+  name        String
+  description String?
+  type        ProjectType
+  budget      Int?
+  deadline    DateTime?
+  status      ProjectStatus @default(REQUESTED)
+  siteUrl     String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  client   Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sites    Site[]
+  files    ProjectFile[]
+  tickets  Ticket[]
+  invoices Invoice[]
+  quotes   Quote[]
+
+  @@index([clientId])
+}
+
+model ProjectFile {
+  id        String  @id @default(cuid())
+  projectId String
+  url       String
+  name      String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Site {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  url       String
+  domain    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Lead {
+  id          String     @id @default(cuid())
+  name        String
+  email       String
+  projectType String?
+  message     String?
+  status      LeadStatus @default(NEW)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Message {
+  id        String        @id @default(cuid())
+  clientId  String
+  sender    MessageSender
+  content   String
+  createdAt DateTime      @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  clientId             String
+  plan                 Plan
+  status               SubscriptionStatus @default(ACTIVE)
+  startDate            DateTime
+  endDate              DateTime?
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, status])
+}
+
+model Invoice {
+  id                      String        @id @default(cuid())
+  invoiceNumber           String        @unique
+  clientId                String
+  projectId               String?
+  amount                  Decimal       @db.Decimal(10, 2)
+  currency                String        @default("EUR")
+  status                  InvoiceStatus @default(PENDING)
+  notes                   String?
+  stripeCheckoutSessionId String?       @unique
+  stripePaymentIntentId   String?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  client  Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  items   InvoiceItem[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Int     @default(1)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  lineTotal   Decimal @db.Decimal(10, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Quote {
+  id          String      @id @default(cuid())
+  quoteNumber String      @unique
+  clientId    String
+  projectId   String?
+  status      QuoteStatus @default(DRAFT)
+  validUntil  DateTime?
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  items   QuoteItem[]
+}
+
+model QuoteItem {
+  id          String  @id @default(cuid())
+  quoteId     String
+  description String
+  quantity    Int     @default(1)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  lineTotal   Decimal @db.Decimal(10, 2)
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Chat (Conversation + ChatMessage)
+// ---------------------------------------------------------------------------
+
+model Conversation {
+  id           String    @id @default(cuid())
+  clientId     String    @unique
+  lastReadAt   DateTime? // client's last read → unread = messages after this from ADMIN
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  client  Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+}
+
+model ChatMessage {
+  id             String     @id @default(cuid())
+  conversationId String
+  senderType     SenderType
+  content        String
+  createdAt      DateTime   @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Tickets (Project → Ticket → TicketMessage, TicketFile)
+// ---------------------------------------------------------------------------
+
+model Ticket {
+  id          String         @id @default(cuid())
+  projectId   String
+  title       String
+  description String?
+  category    TicketCategory
+  priority    TicketPriority
+  status      TicketStatus   @default(OPEN)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messages TicketMessage[]
+  files    TicketFile[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model TicketMessage {
+  id        String     @id @default(cuid())
+  ticketId  String
+  senderType SenderType
+  content   String
+  createdAt DateTime  @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+model TicketFile {
+  id       String @id @default(cuid())
+  ticketId String
+  url      String
+  name     String
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// AuditLog — journal de toutes les actions et erreurs métier
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String     @id @default(cuid())
+  level      AuditLevel @default(INFO)
+  action     String     // ex: "INVOICE_CREATED", "CLIENT_DELETED", "PAYMENT_FAILED"
+  entityType String?    // ex: "Invoice", "Client", "Project"
+  entityId   String?    // id de l'entité concernée
+  actorId    String?    // userId de la personne qui a déclenché l'action
+  actorRole  String?    // "ADMIN" | "CLIENT" | "SYSTEM"
+  metadata   Json?      // données contextuelles additionnelles
+  createdAt  DateTime   @default(now())
+
+  @@index([createdAt])
+  @@index([level, createdAt])
+  @@index([action])
+  @@index([entityType, entityId])
+}
